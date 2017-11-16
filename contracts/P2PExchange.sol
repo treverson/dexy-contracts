@@ -11,7 +11,6 @@ contract P2PExchange {
 
     // Deposit your ETH
     function() public payable {
-        // No one going to overflow uint256 with ETH
         wrappedETH[msg.sender] += msg.value;
     }
 
@@ -207,6 +206,10 @@ contract P2PExchange {
         }
 
         filled[order.maker][order.uuid] = msg.sender;
+    }
+
+    function cancel(uint uuid) public {
+        cancelled[msg.sender][uuid] = true;
     }
 
     function _insufficientToken(
