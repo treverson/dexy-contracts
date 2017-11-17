@@ -104,6 +104,8 @@ contract('P2PExchange', function(accounts) {
 
         it('emits TransactionFailed when order is expired')
 
+        it('emits TransactionFailed when order is unauthorized')
+
         it('emits InsufficientFunds when maker does not have enough ETH')
 
         it('emits InsufficientFunds when maker does not have enough Token')
@@ -112,8 +114,7 @@ contract('P2PExchange', function(accounts) {
 
         it('emits InsufficientFunds when taker does not have enough Token')
 
-        it('can exchange ETH for Token', () => {
-        })
+        it('can exchange ETH for Token')
 
         it('can exchange Token for Token')
 
@@ -121,6 +122,19 @@ contract('P2PExchange', function(accounts) {
     })
 })
 
-function _signOrder(order, account) {
-    
+function makeSignedOrder(order, account) {
+}
+
+function _formatOrder(order) {
+
+}
+
+function _orderToArray(order) {
+    return [
+        order.buying,
+        order.buyQuantity,
+        order.expiration,
+        order.maker,
+        order.
+    ]
 }

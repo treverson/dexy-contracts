@@ -3,11 +3,18 @@ pragma solidity ^0.4.15;
 import "./lib/StandardToken.sol";
 
 
-contract P2PExchange {
+contract Exchange {
 
-    mapping(address => mapping(uint => address)) public filled;
+    address public broker;
+    mapping(address => mapping(uint => uint)) public filled;
+    mapping(uint => bool) public authorized;
     mapping(address => mapping(uint => bool)) public cancelled;
+
     mapping(address => uint) public wrappedETH;
+
+    function Exchange() public {
+        broker = msg.sender;
+    }
 
     // Deposit your ETH
     function() public payable {
@@ -35,106 +42,120 @@ contract P2PExchange {
 
     event IncorrectFunds(address indexed taker);
 
-    enum TransactionFailureReason {
+    enum FailureReason {
+        AuthorizationExpired,
+        AuthorizationUsed,
         Cancelled,
         Expired,
         Filled,
         IllogicalTransaction,
-        InvalidSignature
+        InvalidSignature,
+        Unauthorized
     }
 
     event TransactionFailed(
-        TransactionFailureReason reason,
+        FailureReason reason,
         address indexed maker,
         address indexed taker,
-        uint    indexed uuid
+        uint    indexed nonce
     );
 
-    struct P2POrder {
-        address maker;
-        address selling;
-        uint    sellQuantity;
+    struct Order {
         address buying;
         uint    buyQuantity;
         uint    expiration;
-        uint    uuid;
-        bytes32 r;
-        bytes32 s;
+        address maker;
+        address selling;
+        uint    sellQuantity;
+        uint    nonce;
+    }
+
+    struct Authorization {
+        uint    amount;
+        uint    expiration;
+        uint    fee;
+        address taker;
+        uint    nonce;
     }
 
     function exchange(
-        uint[9] memory _order,
-        uint8  v
+        uint[7]    memory _order,
+        uint[5]    memory _authorization,
+        bytes32[4] memory signatures,
+        uint8[2]   memory vs
     ) payable public returns (bool)
     {
-        P2POrder memory order = P2POrder(
+        Order memory order = Order(
             address(_order[0]),
-            address(_order[1]),
+            _order[1],
             _order[2],
             address(_order[3]),
-            _order[4],
+            address(_order[4]),
             _order[5],
-            _order[6],
-            bytes32(_order[7]),
-            bytes32(_order[8])
+            _order[6]
         );
 
-        // Fail if order is cancelled
-        if (cancelled[order.maker][order.uuid]) {
-            TransactionFailed(
-                TransactionFailureReason.Cancelled,
-                order.maker,
-                msg.sender,
-                order.uuid
-            );
-            return false;
+        Authorization memory authorization = Authorization(
+            _authorization[0],
+            _authorization[1],
+            _authorization[2],
+            address(_authorization[3]),
+            _authorization[4]
+        );
+
+        // CANCELLED
+        if (cancelled[order.maker][order.nonce]) {
+            return _fail(FailureReason.Cancelled, order);
         }
 
-        // Fail is order has been filled
-        if (filled[order.maker][order.uuid] != 0x0) {
-            TransactionFailed(
-                TransactionFailureReason.Filled,
-                order.maker,
-                msg.sender,
-                order.uuid
-            );
-            return false;
+        // EXPIRED
+        if (now > order.expiration) {
+            return _fail(FailureReason.Expired, order);
+        }
+
+        // FILLED
+        if (order.sellQuantity - filled[order.maker][order.nonce] < authorization.amount) {
+            return _fail(FailureReason.Filled, order);
+        }
+
+        // AUTHORIZATION RE-ENTRANCY
+        if (authorized[authorization.nonce] == true) {
+            return _fail(FailureReason.AuthorizationUsed, order);
         }
 
         // Fail if signature is invalid
         bytes32 h = keccak256(_order);
-        // TODO need to use prefixing
-        address signer = ecrecover(h, v, order.r, order.s);
+        address signer = _recoverPrefixed(h, vs[0], signatures[0], signatures[1]);
         if (signer != order.maker) {
-            TransactionFailed(
-                TransactionFailureReason.InvalidSignature,
-                order.maker,
-                msg.sender,
-                order.uuid
-            );
-            return false;
+            return _fail(FailureReason.InvalidSignature, order);
         }
 
-        // Fail if order is expired
-        if (now > order.expiration) {
-            TransactionFailed(
-                TransactionFailureReason.Expired,
-                order.maker,
-                msg.sender,
-                order.uuid
-            );
-            return false;
+        h = keccak256(h, _authorization);
+        signer = _recoverPrefixed(h, vs[1], signatures[2], signatures[3]);
+        if (signer != broker) {
+            return _fail(FailureReason.Unauthorized, order);
         }
 
         if (order.selling == order.buying) {
-            TransactionFailed(
-                TransactionFailureReason.IllogicalTransaction,
-                order.maker,
-                msg.sender,
-                order.uuid
-            );
-            return false;
+            return _fail(FailureReason.IllogicalTransaction, order);
         }
+
+        // VALIDATE CORRECT FUNDS
+        if (order.buying == 0x0) {
+            if (msg.value != order.buyQuantity + authorization.fee) {
+                IncorrectFunds(msg.sender);
+                return false;
+            }
+        } else {
+            if (msg.value != authorization.fee) {
+                IncorrectFunds(msg.sender);
+                return false;
+            }
+        }
+
+
+        // TX FEE TO BROKER
+        broker.transfer(authorization.fee);
 
         /* ========== Begin token swap logic ==========
             Order is signed, not expired, not a replay, and not cancelled
@@ -168,7 +189,7 @@ contract P2PExchange {
             // Sell Token for ETH
 
             selling = StandardToken(order.selling);
-            if (msg.value != order.buyQuantity) {
+            if (msg.value != order.buyQuantity + authorization.fee) {
                 IncorrectFunds(msg.sender);
                 return false;
             }
@@ -205,11 +226,17 @@ contract P2PExchange {
             );
         }
 
-        filled[order.maker][order.uuid] = msg.sender;
+        filled[order.maker][order.nonce] += authorization.amount;
+        authorized[authorization.nonce] = true;
     }
 
-    function cancel(uint uuid) public {
-        cancelled[msg.sender][uuid] = true;
+    function cancel(uint nonce) public {
+        cancelled[msg.sender][nonce] = true;
+    }
+
+    function _fail(FailureReason reason, Order order) private returns (bool) {
+        TransactionFailed(reason, order.maker, msg.sender, order.nonce);
+        return false;
     }
 
     function _insufficientToken(
@@ -223,5 +250,16 @@ contract P2PExchange {
             return true;
         }
         return false;
+    }
+
+    function _recoverPrefixed(
+        bytes32 h,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) pure private returns (address)
+    {
+        bytes memory prefix = "\x19Ethereum Signed Message:\n32";
+        return ecrecover(keccak256(prefix, h), v, r, s);
     }
 }
