@@ -74,11 +74,11 @@ contract Exchange {
         uint    amount;
         uint    expiration;
         uint    fee;
-        address taker;
         uint    nonce;
+        address taker;
     }
 
-    function exchange(
+    function trade(
         uint[7]    memory _order,
         uint[5]    memory _authorization,
         bytes32[4] memory signatures,
@@ -99,29 +99,25 @@ contract Exchange {
             _authorization[0],
             _authorization[1],
             _authorization[2],
-            address(_authorization[3]),
-            _authorization[4]
+            _authorization[3],
+            address(_authorization[4])
         );
 
         // CANCELLED
-        if (cancelled[order.maker][order.nonce]) {
+        if (cancelled[order.maker][order.nonce])
             return _fail(FailureReason.Cancelled, order);
-        }
 
         // EXPIRED
-        if (now > order.expiration) {
+        if (now > order.expiration)
             return _fail(FailureReason.Expired, order);
-        }
 
         // FILLED
-        if (order.sellQuantity - filled[order.maker][order.nonce] < authorization.amount) {
+        if (order.sellQuantity - filled[order.maker][order.nonce] < authorization.amount)
             return _fail(FailureReason.Filled, order);
-        }
 
-        // AUTHORIZATION RE-ENTRANCY
-        if (authorized[authorization.nonce] == true) {
+        // DOUBLE-AUTH
+        if (authorized[authorization.nonce] == true)
             return _fail(FailureReason.AuthorizationUsed, order);
-        }
 
         // Fail if signature is invalid
         bytes32 h = keccak256(_order);
@@ -140,22 +136,12 @@ contract Exchange {
             return _fail(FailureReason.IllogicalTransaction, order);
         }
 
-        // VALIDATE CORRECT FUNDS
-        if (order.buying == 0x0) {
-            if (msg.value != order.buyQuantity + authorization.fee) {
-                IncorrectFunds(msg.sender);
-                return false;
-            }
-        } else {
-            if (msg.value != authorization.fee) {
-                IncorrectFunds(msg.sender);
-                return false;
-            }
+        // VALIDATE FEE SENT
+        // If taker is sending ETH we do this later
+        if (order.buying != 0x0 && msg.value != authorization.fee) {
+            IncorrectFunds(msg.sender);
+            return false;
         }
-
-
-        // TX FEE TO BROKER
-        broker.transfer(authorization.fee);
 
         /* ========== Begin token swap logic ==========
             Order is signed, not expired, not a replay, and not cancelled
@@ -164,6 +150,9 @@ contract Exchange {
 
         StandardToken selling;
         StandardToken buying;
+
+        // TODO we can make rounding error nonexistant
+        uint take = (order.sellQuantity * authorization.amount) / order.buyQuantity;
 
         if (order.selling == 0x0) {
 
@@ -176,58 +165,62 @@ contract Exchange {
                 return false;
             }
 
-            if (_insufficientToken(msg.sender, buying, order.buyQuantity)) {
+            if (_insufficientToken(msg.sender, buying, take)) {
                 return false;
             }
 
-            wrappedETH[order.maker] -= order.sellQuantity;
-            msg.sender.transfer(order.sellQuantity);
+            wrappedETH[order.maker] -= take;
+            msg.sender.transfer(take);
 
-            buying.transferFrom(msg.sender, order.maker, order.buyQuantity);
+            buying.transferFrom(msg.sender, order.maker, authorization.amount);
         } else if (order.buying == 0x0) {
 
             // Sell Token for ETH
 
             selling = StandardToken(order.selling);
-            if (msg.value != order.buyQuantity + authorization.fee) {
+
+            if (msg.value != authorization.amount + authorization.fee) {
                 IncorrectFunds(msg.sender);
                 return false;
             }
 
-            if (_insufficientToken(order.maker, selling, order.sellQuantity)) {
+            if (_insufficientToken(order.maker, selling, take)) {
                 return false;
             }
 
-            order.maker.transfer(order.buyQuantity);
+            order.maker.transfer(authorization.amount);
 
             require(
-                selling.transferFrom(order.maker, msg.sender, order.sellQuantity)
+                selling.transferFrom(order.maker, msg.sender, take)
             );
         } else {
             // Sell Token1 for Token2
             selling = StandardToken(order.selling);
             buying = StandardToken(order.buying);
 
-            if (_insufficientToken(msg.sender, buying, order.buyQuantity)) {
+            if (_insufficientToken(msg.sender, buying, authorization.amount)) {
                 return false;
             }
 
 
-            if (_insufficientToken(order.maker, selling, order.sellQuantity)) {
+            if (_insufficientToken(order.maker, selling, take)) {
                 return false;
             }
 
             require(
-                selling.transferFrom(order.maker, msg.sender, order.sellQuantity)
+                selling.transferFrom(order.maker, msg.sender, take)
             );
 
             require(
-                buying.transferFrom(msg.sender, order.maker, order.buyQuantity)
+                buying.transferFrom(msg.sender, order.maker, authorization.amount)
             );
         }
 
         filled[order.maker][order.nonce] += authorization.amount;
         authorized[authorization.nonce] = true;
+
+        // TX FEE TO BROKER
+        broker.transfer(authorization.fee);
     }
 
     function cancel(uint nonce) public {
@@ -257,7 +250,7 @@ contract Exchange {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) pure private returns (address)
+    ) private returns (address)
     {
         bytes memory prefix = "\x19Ethereum Signed Message:\n32";
         return ecrecover(keccak256(prefix, h), v, r, s);

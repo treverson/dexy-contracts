@@ -2,9 +2,9 @@ pragma solidity ^0.4.2;
 
 import "truffle/Assert.sol";
 import "truffle/DeployedAddresses.sol";
-import "../contracts/P2PExchange.sol";
+import "../contracts/Exchange.sol";
 
-contract TestP2PExchange {
+contract TestExchange {
 
   // function testInitialBalanceUsingDeployedContract() {
   //   MetaCoin meta = MetaCoin(DeployedAddresses.MetaCoin());

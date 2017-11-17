@@ -232,8 +232,71 @@
       "links": {},
       "address": "0x3fede7e89a82ca8d3572c4097fca3b26e097c3c7",
       "updated_at": 1510780960663
+    },
+    "1510939857023": {
+      "events": {
+        "0xf4c7ee8e2ad98280d9d425b49da86818b0ce08afa3837d1ddc63c25db22543ef": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "name": "debtor",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "name": "currency",
+              "type": "address"
+            }
+          ],
+          "name": "InsufficientFunds",
+          "type": "event"
+        },
+        "0xccfdd0f169faa93c4aacadb7a625705fdd41cbd360e3cf9d4793c61b9bd4f7b2": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "name": "taker",
+              "type": "address"
+            }
+          ],
+          "name": "IncorrectFunds",
+          "type": "event"
+        },
+        "0x5a4f479ff9cff043f29ca9a00e86d06d9374b3dbbbcf77c07f0e235e3df8e83b": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": false,
+              "name": "reason",
+              "type": "uint8"
+            },
+            {
+              "indexed": true,
+              "name": "maker",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "name": "taker",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "name": "uuid",
+              "type": "uint256"
+            }
+          ],
+          "name": "TransactionFailed",
+          "type": "event"
+        }
+      },
+      "links": {},
+      "address": "0xf9c70e80c927a9a2857139359567ab460ddceb2b",
+      "updated_at": 1510939998883
     }
   },
   "schema_version": "0.0.5",
-  "updated_at": 1510780960663
+  "updated_at": 1510939998883
 }
