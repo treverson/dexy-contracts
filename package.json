@@ -1,6 +1,6 @@
 {
     "scripts": {
-        "testrpc": "testrpc -m 'bicycle twist uniform parade virtual infant shrug deliver aim law lumber nominee'"
+        "testrpc": "testrpc -m 'bicycle twist uniform parade virtual infant shrug deliver aim law lumber nominee' --account='0x50513a0ba80f48c81e84562899c1171cbbac135a42b56a152240ba2b435c2a62,100000000000000000000000000' --account='0xaeee415e23b267c76a143d72ee00b5d81e7669788fa97c6340e988074891fa06,100000000000000000000000000'"
     },
   "dependencies": {
     "chai": "^4.1.2",

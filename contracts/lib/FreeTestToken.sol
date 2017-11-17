@@ -5,6 +5,6 @@ import "./StandardToken.sol";
 contract FreeTestToken is StandardToken {
 
     function mint(uint amount) public {
-        balances[msg.sender] += amount;
+        balances[msg.sender] += amount;        
     }
 }

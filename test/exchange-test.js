@@ -21,6 +21,8 @@ const FailureReason = {
 
 contract('P2PExchange', function(accounts) {
 
+    console.log('accounts:', accounts)
+
     const maker = accounts[0]
     const taker = accounts[1]
 
@@ -134,12 +136,16 @@ contract('P2PExchange', function(accounts) {
             })
         })
 
-        it.only('emits TransactionFailed when order is filled', () => {
+        it('emits TransactionFailed when order is filled', () => {
             let order = ethForTokenOrder()
 
-            return takeOrder(order)
+            return abc.approve(exchange.address, web3.toWei(1000), { from: taker })
+            .then(() => {
+                return exchange.sendTransaction({ from: maker, value: web3.toWei(10) })
+            })
+            .then(() => takeOrder(order))
             .then(result => {
-                console.log(result)
+                // TODO add expectations here about balances
                 let success = _getEvent('TradeCompleted', result.logs)
                 expect(success).to.not.eq(undefined)
                 return takeOrder(order)
@@ -162,11 +168,48 @@ contract('P2PExchange', function(accounts) {
 
         it('emits InsufficientFunds when taker does not have enough Token')
 
-        it('can exchange ETH for Token')
+        it('can exchange ETH for Token', () => {
+            let order = ethForTokenOrder()
 
-        it('can exchange Token for Token')
+            return exchange.sendTransaction({ from: maker, value: web3.toWei(10) })
+            .then(() => abc.approve(exchange.address, web3.toWei(1000), {
+                from: taker
+            }))
+            .then(() => takeOrder(order))
+            .then(result => {
+                let success = _getSuccess(result)
+                expect(success).to.not.eq(undefined)
+            })
+        })
 
-        it('can exchnage Token for ETH')
+        it('can exchange Token for Token', () => {
+            let order = tokenForTokenOrder()
+
+            return abc.approve(exchange.address, web3.toWei(1000), { from: taker })
+            .then(() => {
+                return xyz.approve(exchange.address, web3.toWei(10), { from: maker })
+            })
+            .then(() => {
+                return takeOrder(order)
+            })
+            .then(result => {
+                console.log(result)
+                let event = _getSuccess(result)
+                expect(event).to.not.eq(undefined)
+            })
+        })
+
+        it('can exchnage Token for ETH', () => {
+            let order = tokenForEthOrder()
+
+            return abc.approve(exchange.address, web3.toWei(1000), { from: maker })
+            .then(() => takeOrder(order))
+            .then(result => {
+                let success = _getSuccess(result)
+                console.log(result)
+                expect(success).to.not.eq(undefined)
+            })
+        })
     })
 
     function takeOrder(order) {
@@ -185,33 +228,42 @@ contract('P2PExchange', function(accounts) {
         console.log(packedOrder)
         console.log(packedAuth)
         let orderHash = web3.sha3(packedOrder, { encoding: 'hex' })
-        let authHash = web3.sha3(packedAuth, { encoding: 'hex' })
+        let authHash = web3.sha3(orderHash.slice(2) + packedAuth, { encoding: 'hex' })
+
         console.log('order hash:', orderHash)
         console.log('auth hash:', authHash)
 
         return sign(orderHash)
         .then(signature => {
             orderSig = signature
-            return sign(authHash)
+
+            return sign( authHash )
         })
         .then(sig => {
             authSig = sig
-        })
-        .then(() => {
 
             function map0xPrefix(padded) {
                 return _.map(padded, item => '0x' + item)
             }
-            return exchange
-            .trade(map0xPrefix(paddedOrder), map0xPrefix(paddedAuth), [
+
+            const signatures = map0xPrefix([
                 orderSig.r,
                 orderSig.s,
                 authSig.r,
                 authSig.s
-            ], [
+            ])
+
+            let value = web3.toBigNumber(web3.toWei(0.0001))
+
+            if (order.buying == '0x0') {
+                value = value.add(order.buyQuantity)
+            }
+
+            return exchange
+            .trade(map0xPrefix(paddedOrder), map0xPrefix(paddedAuth), signatures, [
                 orderSig.v,
                 authSig.v
-            ], { from: taker })
+            ], { from: taker, value: value })
         })
     }
 
@@ -230,11 +282,11 @@ contract('P2PExchange', function(accounts) {
     function tokenForEthOrder() {
         return {
             buying: '0x0',
-            buyQuantity: web3.toWei(1000),
+            buyQuantity: web3.toBigNumber(web3.toWei(10)),
             expiration: _oneDay(),
             maker: web3.eth.coinbase,
             selling: abc.address,
-            sellQuantity: web3.toWei(10),
+            sellQuantity: web3.toBigNumber(web3.toWei(1000)),
             nonce: _nonce()
         }
     }
@@ -254,7 +306,7 @@ contract('P2PExchange', function(accounts) {
 
     function _authorizationForOrder(order) {
         return {
-            amount: order.sellQuantity,
+            amount: order.buyQuantity,
             expiration: _oneDay(),
             fee: web3.toWei(0.0001),
             nonce: _nonce(),
@@ -273,7 +325,7 @@ function sign(data) {
             let formatted = {
                 r: sig.slice(2, 66),
                 s: sig.slice(66, 130),
-                v: parseInt(sig.slice(130))
+                v: web3.toDecimal('0x' + sig.slice(130))
             }
 
             if (formatted.v <= 1) {
@@ -337,6 +389,10 @@ function _getEvent(name, logs) {
     return _.find(logs, log => {
         return log.event === name;
     })
+}
+
+function _getSuccess(result) {
+    return _getEvent('TradeCompleted', result.logs)
 }
 
 function _oneDay() {

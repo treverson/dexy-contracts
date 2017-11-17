@@ -86,7 +86,7 @@ contract Exchange {
     }
 
     event TradeBegan(bytes32[7] order, bytes32[5] authorization);
-
+    event BrokerSigInvalid(address broker, address signer);
     event TradeCompleted(bytes32[7] order, bytes32[5] authorization);
 
     function trade(
@@ -125,7 +125,7 @@ contract Exchange {
             return _fail(FailureReason.Expired, order);
 
         // FILLED
-        if (order.sellQuantity - filled[order.maker][order.nonce] < authorization.amount)
+        if (order.buyQuantity - filled[order.maker][order.nonce] < authorization.amount)
             return _fail(FailureReason.Filled, order);
 
         // DOUBLE-AUTH
@@ -143,6 +143,7 @@ contract Exchange {
         h = keccak256(h, _authorization);
         signer = _recoverPrefixed(h, vs[1], signatures[2], signatures[3]);
         if (signer != broker) {
+            BrokerSigInvalid(broker, signer);
             SignatureInvalid(h, vs[1], signatures[2], signatures[3]);
             return _fail(FailureReason.Unauthorized, order);
         }
@@ -187,7 +188,9 @@ contract Exchange {
             wrappedETH[order.maker] -= take;
             msg.sender.transfer(take);
 
-            buying.transferFrom(msg.sender, order.maker, authorization.amount);
+            require(
+                buying.transferFrom(msg.sender, order.maker, authorization.amount)
+            );
         } else if (order.buying == 0x0) {
 
             // Sell Token for ETH
