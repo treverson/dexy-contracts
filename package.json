@@ -1,4 +1,7 @@
 {
+    "scripts": {
+        "testrpc": "testrpc -m 'bicycle twist uniform parade virtual infant shrug deliver aim law lumber nominee'"
+    },
   "dependencies": {
     "chai": "^4.1.2",
     "lodash": "^4.17.4"

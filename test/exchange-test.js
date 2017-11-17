@@ -140,6 +140,8 @@ contract('P2PExchange', function(accounts) {
             return takeOrder(order)
             .then(result => {
                 console.log(result)
+                let success = _getEvent('TradeCompleted', result.logs)
+                expect(success).to.not.eq(undefined)
                 return takeOrder(order)
             })
             .then(result => {
@@ -172,14 +174,18 @@ contract('P2PExchange', function(accounts) {
 
         let authorization = _authorizationForOrder(order)
 
-        let packedOrder = _pack(_orderToArray(order))
-        let packedAuth = _pack(_authorizationToArray(authorization))
+        let paddedOrder = _pad(_orderToArray(order))
+        let paddedAuth = _pad(_authorizationToArray(authorization))
 
         let orderSig
         let authSig
 
-        let orderHash = web3.sha3(packedOrder.join(''))
-        let authHash = web3.sha3(packedAuth.join(''))
+        const packedOrder = paddedOrder.join('')
+        const packedAuth = paddedAuth.join('')
+        console.log(packedOrder)
+        console.log(packedAuth)
+        let orderHash = web3.sha3(packedOrder, { encoding: 'hex' })
+        let authHash = web3.sha3(packedAuth, { encoding: 'hex' })
         console.log('order hash:', orderHash)
         console.log('auth hash:', authHash)
 
@@ -193,8 +199,11 @@ contract('P2PExchange', function(accounts) {
         })
         .then(() => {
 
+            function map0xPrefix(padded) {
+                return _.map(padded, item => '0x' + item)
+            }
             return exchange
-            .trade(_numeric(packedOrder), _numeric(packedAuth), [
+            .trade(map0xPrefix(paddedOrder), map0xPrefix(paddedAuth), [
                 orderSig.r,
                 orderSig.s,
                 authSig.r,
@@ -209,11 +218,11 @@ contract('P2PExchange', function(accounts) {
     function ethForTokenOrder() {
         return {
             buying: abc.address,
-            buyQuantity: web3.toWei(1000),
+            buyQuantity: web3.toBigNumber(web3.toWei(1000)),
             expiration: _oneDay(),
             maker: web3.eth.coinbase,
             selling: '0x0',
-            sellQuantity: web3.toWei(10),
+            sellQuantity: web3.toBigNumber(web3.toWei(10)),
             nonce: _nonce()
         }
     }
@@ -255,6 +264,7 @@ contract('P2PExchange', function(accounts) {
 })
 
 function sign(data) {
+    console.log('signing:', data, 'for:', web3.eth.coinbase)
     return new Promise((resolve, reject) => {
         web3.eth.sign(web3.eth.coinbase, data, (err, sig) => {
             if (err)
@@ -276,7 +286,7 @@ function sign(data) {
     })
 }
 
-function _pack(array) {
+function _pad(array) {
     return _.map(array, value => {
         let hex = web3.toHex(value)
         return web3.padLeft(hex.slice(2), 64, '0')
@@ -330,7 +340,7 @@ function _getEvent(name, logs) {
 }
 
 function _oneDay() {
-    return Math.floor(new Date().setDate(new Date().getDate() + 1)) / 1000
+    return Math.floor(new Date().setDate(new Date().getDate() + 1) / 1000)
 }
 
 function _nonce() {

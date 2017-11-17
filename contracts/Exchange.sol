@@ -6,9 +6,9 @@ import "./lib/StandardToken.sol";
 contract Exchange {
 
     address public broker;
-    mapping(address => mapping(uint => uint)) public filled;
-    mapping(uint => bool) public authorized;
-    mapping(address => mapping(uint => bool)) public cancelled;
+    mapping(address => mapping(bytes32 => uint)) public filled;
+    mapping(bytes32 => bool) public authorized;
+    mapping(address => mapping(bytes32 => bool)) public cancelled;
 
     mapping(address => uint) public wrappedETH;
 
@@ -57,7 +57,14 @@ contract Exchange {
         FailureReason reason,
         address indexed maker,
         address indexed taker,
-        uint    indexed nonce
+        bytes32 indexed nonce
+    );
+
+    event SignatureInvalid(
+        bytes32 h,
+        uint8   v,
+        bytes32 r,
+        bytes32 s
     );
 
     struct Order {
@@ -67,41 +74,47 @@ contract Exchange {
         address maker;
         address selling;
         uint    sellQuantity;
-        uint    nonce;
+        bytes32 nonce;
     }
 
     struct Authorization {
         uint    amount;
         uint    expiration;
         uint    fee;
-        uint    nonce;
+        bytes32 nonce;
         address taker;
     }
 
+    event TradeBegan(bytes32[7] order, bytes32[5] authorization);
+
+    event TradeCompleted(bytes32[7] order, bytes32[5] authorization);
+
     function trade(
-        uint[7]    memory _order,
-        uint[5]    memory _authorization,
+        bytes32[7] memory _order,
+        bytes32[5] memory _authorization,
         bytes32[4] memory signatures,
         uint8[2]   memory vs
     ) payable public returns (bool)
     {
         Order memory order = Order(
             address(_order[0]),
-            _order[1],
-            _order[2],
+            uint(_order[1]),
+            uint(_order[2]),
             address(_order[3]),
             address(_order[4]),
-            _order[5],
+            uint(_order[5]),
             _order[6]
         );
 
         Authorization memory authorization = Authorization(
-            _authorization[0],
-            _authorization[1],
-            _authorization[2],
+            uint(_authorization[0]),
+            uint(_authorization[1]),
+            uint(_authorization[2]),
             _authorization[3],
             address(_authorization[4])
         );
+
+        TradeBegan(_order, _authorization);
 
         // CANCELLED
         if (cancelled[order.maker][order.nonce])
@@ -123,12 +136,14 @@ contract Exchange {
         bytes32 h = keccak256(_order);
         address signer = _recoverPrefixed(h, vs[0], signatures[0], signatures[1]);
         if (signer != order.maker) {
+            SignatureInvalid(keccak256(_order), vs[0], signatures[0], signatures[1]);
             return _fail(FailureReason.InvalidSignature, order);
         }
 
         h = keccak256(h, _authorization);
         signer = _recoverPrefixed(h, vs[1], signatures[2], signatures[3]);
         if (signer != broker) {
+            SignatureInvalid(h, vs[1], signatures[2], signatures[3]);
             return _fail(FailureReason.Unauthorized, order);
         }
 
@@ -221,9 +236,11 @@ contract Exchange {
 
         // TX FEE TO BROKER
         broker.transfer(authorization.fee);
+
+        TradeCompleted(_order, _authorization);
     }
 
-    function cancel(uint nonce) public {
+    function cancel(bytes32 nonce) public {
         cancelled[msg.sender][nonce] = true;
     }
 
