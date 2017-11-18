@@ -37,10 +37,12 @@ contract Exchange {
 
     event InsufficientFunds(
         address indexed debtor,
-        address indexed currency
+        address indexed currency,
+        uint    expected,
+        uint    actual
     );
 
-    event IncorrectFunds(address indexed taker);
+    event IncorrectFunds(address indexed taker, uint expected, uint sent);
 
     enum FailureReason {
         AuthorizationExpired,
@@ -59,6 +61,8 @@ contract Exchange {
         address indexed taker,
         bytes32 indexed nonce
     );
+
+    event TransactionSucceeded();
 
     event SignatureInvalid(
         bytes32 h,
@@ -85,10 +89,6 @@ contract Exchange {
         address taker;
     }
 
-    event TradeBegan(bytes32[7] order, bytes32[5] authorization);
-    event BrokerSigInvalid(address broker, address signer);
-    event TradeCompleted(bytes32[7] order, bytes32[5] authorization);
-
     function trade(
         bytes32[7] memory _order,
         bytes32[5] memory _authorization,
@@ -114,8 +114,6 @@ contract Exchange {
             address(_authorization[4])
         );
 
-        TradeBegan(_order, _authorization);
-
         // CANCELLED
         if (cancelled[order.maker][order.nonce])
             return _fail(FailureReason.Cancelled, order);
@@ -136,15 +134,13 @@ contract Exchange {
         bytes32 h = keccak256(_order);
         address signer = _recoverPrefixed(h, vs[0], signatures[0], signatures[1]);
         if (signer != order.maker) {
-            SignatureInvalid(keccak256(_order), vs[0], signatures[0], signatures[1]);
+            SignatureInvalid(h, vs[0], signatures[0], signatures[1]);
             return _fail(FailureReason.InvalidSignature, order);
         }
 
         h = keccak256(h, _authorization);
         signer = _recoverPrefixed(h, vs[1], signatures[2], signatures[3]);
         if (signer != broker) {
-            BrokerSigInvalid(broker, signer);
-            SignatureInvalid(h, vs[1], signatures[2], signatures[3]);
             return _fail(FailureReason.Unauthorized, order);
         }
 
@@ -155,7 +151,7 @@ contract Exchange {
         // VALIDATE FEE SENT
         // If taker is sending ETH we do this later
         if (order.buying != 0x0 && msg.value != authorization.fee) {
-            IncorrectFunds(msg.sender);
+            IncorrectFunds(msg.sender, authorization.fee, msg.value);
             return false;
         }
 
@@ -176,8 +172,8 @@ contract Exchange {
 
             buying = StandardToken(order.buying);
 
-            if (wrappedETH[order.maker] < order.sellQuantity) {
-                InsufficientFunds(order.maker, order.selling);
+            if (wrappedETH[order.maker] < take) {
+                InsufficientFunds(order.maker, order.selling, take, wrappedETH[order.maker]);
                 return false;
             }
 
@@ -198,7 +194,7 @@ contract Exchange {
             selling = StandardToken(order.selling);
 
             if (msg.value != authorization.amount + authorization.fee) {
-                IncorrectFunds(msg.sender);
+                IncorrectFunds(msg.sender, msg.value, authorization.amount + authorization.fee);
                 return false;
             }
 
@@ -240,7 +236,7 @@ contract Exchange {
         // TX FEE TO BROKER
         broker.transfer(authorization.fee);
 
-        TradeCompleted(_order, _authorization);
+        TransactionSucceeded();
     }
 
     function cancel(bytes32 nonce) public {
@@ -259,7 +255,7 @@ contract Exchange {
     ) private returns (bool)
     {
         if (token.allowance(_address, this) < amount) {
-            InsufficientFunds(_address, token);
+            InsufficientFunds(_address, token, amount, token.allowance(_address, this));
             return true;
         }
         return false;

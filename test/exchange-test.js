@@ -8,6 +8,8 @@ const XYZToken = artifacts.require('./XYZToken.sol')
 const { expect, assert } = require('chai')
 const _ = require('lodash')
 
+const optimum = require('optimum-order-utils')
+
 const FailureReason = {
     AuthorizationExpired: web3.toBigNumber(0),
     AuthorizationUsed: web3.toBigNumber(1),
@@ -19,7 +21,7 @@ const FailureReason = {
     Unauthorized: web3.toBigNumber(7)
 }
 
-contract('P2PExchange', function(accounts) {
+contract('Exchange', function(accounts) {
 
     console.log('accounts:', accounts)
 
@@ -105,7 +107,18 @@ contract('P2PExchange', function(accounts) {
             })
         })
 
-        it('returns false when a user withdraws more token than they have')
+        it('errors when a user withdraws more token than they have', () => {
+            let msg = 'expected this to fail'
+            return exchange.withdraw(abc.address, web3.toWei(100000))
+            .then(() => {
+                throw new Error(msg)
+            })
+            .catch(err => {
+                if (err.message !== msg) {
+                    throw new Error('User can withdraw more token than they have')
+                }
+            })
+        })
 
         it('allows users to withdraw a token')
     })
@@ -136,7 +149,7 @@ contract('P2PExchange', function(accounts) {
             })
         })
 
-        it('emits TransactionFailed when order is filled', () => {
+        it.only('emits TransactionFailed when order is filled', () => {
             let order = ethForTokenOrder()
 
             return abc.approve(exchange.address, web3.toWei(1000), { from: taker })
@@ -144,9 +157,10 @@ contract('P2PExchange', function(accounts) {
                 return exchange.sendTransaction({ from: maker, value: web3.toWei(10) })
             })
             .then(() => takeOrder(order))
+            .then(optimum.utils.printLogs)
             .then(result => {
                 // TODO add expectations here about balances
-                let success = _getEvent('TradeCompleted', result.logs)
+                let success = _getSuccess(result)
                 expect(success).to.not.eq(undefined)
                 return takeOrder(order)
             })
@@ -210,6 +224,59 @@ contract('P2PExchange', function(accounts) {
                 expect(success).to.not.eq(undefined)
             })
         })
+
+        it('can partially fill an order', () => {
+            let order = optimum.Order.fromForm({
+                buying: abc.address,
+                buyQuantity: '1000',
+                expiration: optimum.utils.secondsFromNow(120),
+                maker: maker,
+                selling: '0x0',
+                sellQuantity: '10'
+            })
+
+            let auth = order.authorization({
+                amount: '200',
+                expiration: optimum.utils.secondsFromNow(120),
+                fee: '0.0001',
+                taker: taker
+            })
+
+            let orderSig
+            let authSig
+
+            return exchange.sendTransaction({ from: maker, value: web3.toWei(2) })
+            .then(() => {
+                return abc.approve(exchange.address, web3.toWei(200), { from: taker })
+            })
+            .then(() => order.sign(web3))
+            .then(sig => {
+                orderSig = sig
+                return auth.sign(web3)
+            })
+            .then(sig => {
+                authSig = sig
+
+                return exchange.trade(
+                    order.toSolidity(),
+                    auth.toSolidity(),
+                    map0xPrefix([orderSig.r, orderSig.s, authSig.r, authSig.s]),
+                    [orderSig.v, authSig.v],
+                    {
+                        from: taker,
+                        value: auth.fee
+                    }
+                )
+            })
+            .then(optimum.utils.printLogs)
+            .then(result => {
+                console.log(result)
+
+                console.log(result)
+                let success = _getSuccess(result)
+                expect(success).to.not.eq(undefined)
+            })
+        })
     })
 
     function takeOrder(order) {
@@ -241,10 +308,6 @@ contract('P2PExchange', function(accounts) {
         })
         .then(sig => {
             authSig = sig
-
-            function map0xPrefix(padded) {
-                return _.map(padded, item => '0x' + item)
-            }
 
             const signatures = map0xPrefix([
                 orderSig.r,
@@ -338,6 +401,10 @@ function sign(data) {
     })
 }
 
+function map0xPrefix(padded) {
+    return _.map(padded, item => '0x' + item)
+}
+
 function _pad(array) {
     return _.map(array, value => {
         let hex = web3.toHex(value)
@@ -392,7 +459,7 @@ function _getEvent(name, logs) {
 }
 
 function _getSuccess(result) {
-    return _getEvent('TradeCompleted', result.logs)
+    return _getEvent('TransactionSucceeded', result.logs)
 }
 
 function _oneDay() {
