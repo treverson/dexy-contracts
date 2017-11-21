@@ -107,16 +107,13 @@ contract('Exchange', function(accounts) {
             })
         })
 
-        it('errors when a user withdraws more token than they have', () => {
-            let msg = 'expected this to fail'
-            return exchange.withdraw(abc.address, web3.toWei(100000))
+        it('errors when a user withdraws more token than they have', done => {
+            exchange.withdraw(abc.address, web3.toWei(100000))
             .then(() => {
-                throw new Error(msg)
+                done(new Error('User can withdraw more token than they have'))
             })
             .catch(err => {
-                if (err.message !== msg) {
-                    throw new Error('User can withdraw more token than they have')
-                }
+                done()
             })
         })
 
@@ -149,7 +146,7 @@ contract('Exchange', function(accounts) {
             })
         })
 
-        it.only('emits TransactionFailed when order is filled', () => {
+        it('emits TransactionFailed when order is filled', () => {
             let order = ethForTokenOrder()
 
             return abc.approve(exchange.address, web3.toWei(1000), { from: taker })
@@ -228,17 +225,17 @@ contract('Exchange', function(accounts) {
         it('can partially fill an order', () => {
             let order = optimum.Order.fromForm({
                 buying: abc.address,
-                buyQuantity: '1000',
+                buy_quantity: '1000000',
                 expiration: optimum.utils.secondsFromNow(120),
                 maker: maker,
                 selling: '0x0',
-                sellQuantity: '10'
+                sell_quantity: '100000'
             })
 
             let auth = order.authorization({
-                amount: '200',
+                amount: '20000',
                 expiration: optimum.utils.secondsFromNow(120),
-                fee: '0.0001',
+                fee: '1000',
                 taker: taker
             })
 
@@ -319,7 +316,7 @@ contract('Exchange', function(accounts) {
             let value = web3.toBigNumber(web3.toWei(0.0001))
 
             if (order.buying == '0x0') {
-                value = value.add(order.buyQuantity)
+                value = value.add(order.buy_quantity)
             }
 
             return exchange
@@ -333,11 +330,11 @@ contract('Exchange', function(accounts) {
     function ethForTokenOrder() {
         return {
             buying: abc.address,
-            buyQuantity: web3.toBigNumber(web3.toWei(1000)),
+            buy_quantity: web3.toBigNumber(web3.toWei(1000)),
             expiration: _oneDay(),
             maker: web3.eth.coinbase,
             selling: '0x0',
-            sellQuantity: web3.toBigNumber(web3.toWei(10)),
+            sell_quantity: web3.toBigNumber(web3.toWei(10)),
             nonce: _nonce()
         }
     }
@@ -345,11 +342,11 @@ contract('Exchange', function(accounts) {
     function tokenForEthOrder() {
         return {
             buying: '0x0',
-            buyQuantity: web3.toBigNumber(web3.toWei(10)),
+            buy_quantity: web3.toBigNumber(web3.toWei(10)),
             expiration: _oneDay(),
             maker: web3.eth.coinbase,
             selling: abc.address,
-            sellQuantity: web3.toBigNumber(web3.toWei(1000)),
+            sell_quantity: web3.toBigNumber(web3.toWei(1000)),
             nonce: _nonce()
         }
     }
@@ -357,11 +354,11 @@ contract('Exchange', function(accounts) {
     function tokenForTokenOrder() {
         return {
             buying: abc.address,
-            buyQuantity: web3.toWei(1000),
+            buy_quantity: web3.toWei(1000),
             expiration: _oneDay(),
             maker: web3.eth.coinbase,
             selling: xyz.address,
-            sellQuantity: web3.toWei(10),
+            sell_quantity: web3.toWei(10),
             nonce: _nonce()
         }
     }
@@ -369,7 +366,7 @@ contract('Exchange', function(accounts) {
 
     function _authorizationForOrder(order) {
         return {
-            amount: order.buyQuantity,
+            amount: order.buy_quantity,
             expiration: _oneDay(),
             fee: web3.toWei(0.0001),
             nonce: _nonce(),
@@ -429,11 +426,11 @@ function _numeric(array) {
 function _orderToArray(order) {
     return [
         order.buying,
-        order.buyQuantity,
+        order.buy_quantity,
         order.expiration,
         order.maker,
         order.selling,
-        order.sellQuantity,
+        order.sell_quantity,
         order.nonce
     ]
 }

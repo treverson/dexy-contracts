@@ -1,3 +1,5 @@
+const Builder = require('truffle-default-builder')
+
 module.exports = {
   networks: {
     development: {
